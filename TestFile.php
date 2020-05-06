@@ -15,7 +15,7 @@
         $dbSecret = '05f3aed260dc756af246e166d1eef9c8f43cd61b';
         $queryTest = '[
             {
-              "sql": "SELECT first_name, last_name, phone_number, email FROM Patient",
+              "sql": "SELECT first_name, last_name, phone_number, email FROM Patient, countries",
               "timestamp": 1567493198,
               "user": "4353479",
               "group": "Medics",
@@ -45,10 +45,14 @@
         echo "<br>";
         print_r ("Authentication result: ".$resultAuthentication);          //should print 200 in a successful request
         echo "<br>";
+        echo "<br>";
         print_r ("Query result: ".$resultQuery);                            //should print 200 in a successful request
 
     ?>
 
+
     </body>
+
+
 
 </html>
