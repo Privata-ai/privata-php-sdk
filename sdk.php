@@ -87,44 +87,28 @@
             } catch( Exception $e){
                 return($e->getMessage());
             }
-
-            $personalData = $this -> getPersonalDataParams($response);
-            print_r($personalData);
-            echo "<br>";
-            echo "<br>";
-            
+            $personalData = $this -> getPersonalDataParams($response);            
             $objQuery = json_decode($queries, true);
-            foreach ($objQuery as $query){
-                if(preg_match("/\bFROM\b/i", $query["sql"], $offset, PREG_OFFSET_CAPTURE)){         //get table names from SQL query
-                    $result = substr($query["sql"],$offset[0][1]+5);
-                    $tableNames = preg_split("/[\s,]+/", $result);
-                    print_r($tableNames);
-                    echo "<br>";
-                    echo "<br>";
 
-                    foreach($tableNames as $queryTable){                            //search the array containing the names of tables with personal data, with the tables names found inside the SQL query
-                        foreach($personalData as $table){
-                            if($queryTable == $table["tableName"]){
-                                echo "Match found";
-                                echo "<br>";
-                                echo "<br>";
-                            }
-                        }
-                    }
-
-
-                }
+            if (isset($objQuery[0]["sql"])){                                                //case where a SQL json query was submited
+                $objQuery = $this -> parseSQLQuery($objQuery);
             }
             
+            if(isset($objQuery[0]["tables"])){
+                $filteredQueryArray = $this -> filterJson($objQuery, $personalData);       // case where a table json was submited
+                echo "<br>";
+                print_r($filteredQueryArray);
+                echo "<br>";
+            }
+            $filteredJson = json_encode($filteredQueryArray);
 
-
-
+            
             $url = $apiUrl."/databases"."/".$dbKey."/queries";
             try{
                 $curl = curl_init($url);
                 curl_setopt($curl, CURLOPT_POST, true);
                 curl_setopt($curl, CURLOPT_HTTPHEADER, $headers);
-                curl_setopt($curl, CURLOPT_POSTFIELDS, $queries);
+                curl_setopt($curl, CURLOPT_POSTFIELDS, $filteredJson);
                 curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
                 $response = curl_exec($curl);
                 curl_close($curl);
@@ -173,6 +157,100 @@
                 }
             }
             return $personalData;
+        }
+
+        
+        private function filterJson($objQuery, $personalData){
+            $filteredQueryArray = [];
+
+            foreach($objQuery as $query){                                            //go query by query
+                $filteredQuery=[];
+                foreach($query["tables"] as $queryTable){                            //search the array containing the tables' names with personal data, with the tables names found inside the SQL query
+                    foreach($personalData as $tableWithPersonalData){
+                        if($queryTable["table"] == $tableWithPersonalData["tableName"]){
+                            
+                            $columnsWithPersonalData = [];
+                            foreach($queryTable["columns"] as $queryColumn){
+                                foreach($tableWithPersonalData["columns"]  as $columnWithPersonalData)
+                                    if(!strcasecmp($queryColumn,$columnWithPersonalData)){
+                                        array_push($columnsWithPersonalData, $queryColumn);
+                                    }
+                            }
+
+                            if(!empty($columnsWithPersonalData)){
+                                array_push($filteredQuery, array(
+                                    "table" => $queryTable["table"],
+                                    "columns" => $columnsWithPersonalData,
+                                    )
+                                );
+                            }
+                        }
+                    }
+                }
+
+                if(!empty($filteredQuery)){
+                    array_push($filteredQueryArray, array(
+                        "tables" => $filteredQuery,
+                        "action" => "Read",
+                        "timestamp" => $query["timestamp"],
+                        "user" => $query["user"],
+                        "group" => $query["group"],
+                        "returnedRows" => $query["returnedRows"],
+                        )
+                    );
+                }
+                
+            }
+            return $filteredQueryArray;
+        }
+
+        private function parseSQLQuery($objQuery){
+            $parsedQueryArray = [];
+            foreach ($objQuery as $query){                                                          //go query by query
+                preg_match("/\bFROM\b/i", $query["sql"], $offsetTable, PREG_OFFSET_CAPTURE);        //get table names from SQL query
+                $offsetTableStart = $offsetTable[0][1]+5;
+
+                if(preg_match("/\bWhere\b/i", $query["sql"], $offsetWhereClause, PREG_OFFSET_CAPTURE)){     //if the query comes with Where clause, we have to ignore it
+                    $offsetTableEnd = $offsetWhereClause[0][1] - 1 - $offsetTableStart;                     // -1 refers to the blank space between the last table name and the WHERE clause
+                    $result = substr($query["sql"], $offsetTableStart, $offsetTableEnd);
+                }
+                else{
+                    $result = substr($query["sql"], $offsetTableStart);
+                }
+                $tableNames = preg_split("/[\s,]+/", $result);
+                $parsedQuery=[];
+                $index = 0;
+
+                foreach($tableNames as $queryTable){                            //search the array containing the tables' names with personal data, with the tables names found inside the SQL query                         
+                            array_push($parsedQuery, array(
+                                "table" => $queryTable,
+                                "columns" => [],
+                                )
+                            );
+                            preg_match("/\bSELECT\b/i", $query["sql"], $offsetColumn, PREG_OFFSET_CAPTURE);
+                            $offsetColumnStart = $offsetColumn[0][1] + 7;
+                            $offsetColumnEnd = $offsetTable[0][1] - 1  - $offsetColumnStart;         // -1 refers to the blank space between the last column name and the FROM clause
+                            $result = substr($query["sql"],$offsetColumnStart, $offsetColumnEnd);
+                            $columnsNames = preg_split("/[\s,]+/", $result);
+
+                            foreach($columnsNames as $queryColumn){                                 
+                                        array_push($parsedQuery[$index]["columns"], $queryColumn);
+                            }
+                            $index ++;
+                }
+
+                    array_push($parsedQueryArray, array(                               //create a json array with a "tables" format
+                        "tables" => $parsedQuery,
+                        "action" => "Read",
+                        "timestamp" => $query["timestamp"],
+                        "user" => $query["user"],
+                        "group" => $query["group"],
+                        "returnedRows" => $query["returnedRows"],
+                        )
+                    );
+                
+            }
+            return $parsedQueryArray;
         }
 
     }
