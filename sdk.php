@@ -1,5 +1,5 @@
 <?php
-
+    
     /** 
      * Class with an initialize function and query submition function
      * 
@@ -8,6 +8,8 @@
 
         protected $dbKey = '';
         protected $idToken = '';
+        protected $refreshToken ='';
+        protected $expiresIn = '';
         protected $errorMessage = '';
 
         /**
@@ -42,11 +44,14 @@
                 return($e->getMessage());
             }
 
+
             if(http_response_code() == 200){
                 $obj = json_decode($response, true);                //convert json to array
                 if (isset ($obj['idToken'])){                       
-                    global $idToken;
+                    global $idToken, $refreshToken, $expiresIn;
                     $idToken = $obj['idToken'];
+                    $refreshToken = $obj['refreshToken'];
+                    $expiresIn = $obj['expiresIn'];
                     return 200;                                     //query has been submited successfully
                 }
                 else if (isset($obj["error"]["message"])) {         //Checks in order to detect an unsuccessful submit request
@@ -68,13 +73,17 @@
          * Fails with an error message should a request fail.
          */
         public function submitQuery($queries){
-            global $idToken, $dbKey;
+            global $idToken, $dbKey, $refreshToken;
 
+
+            $this -> refreshToken($refreshToken);            
             $apiUrl = 'https://api-sandbox.privata.ai';
             $headers = array(
                 "Content-Type: application/json",
                 "Authorization: Bearer ".$idToken
             );
+
+
             $url = $apiUrl."/databases"."/".$dbKey;
 
             
@@ -87,23 +96,14 @@
             } catch( Exception $e){
                 return($e->getMessage());
             }
-            $personalData = $this -> getPersonalDataParams($response);            
-            $objQuery = json_decode($queries, true);
 
-            if (isset($objQuery[0]["sql"])){                                                //case where a SQL json query was submited
-                $objQuery = $this -> parseSQLQuery($objQuery);
-            }
-            
-            if(isset($objQuery[0]["tables"])){
-                $filteredQueryArray = $this -> filterJson($objQuery, $personalData);       // case where a table json was submited
-                echo "<br>";
-                print_r($filteredQueryArray);
-                echo "<br>";
-            }
+            $objQuery = json_decode($queries, true);
+            $personalData = $this -> getPersonalDataParams($response);            
+            $filteredQueryArray = $this -> filterQuery($objQuery, $personalData);       // filter the query submited in order to only send relevant data
             $filteredJson = json_encode($filteredQueryArray);
 
-            
             $url = $apiUrl."/databases"."/".$dbKey."/queries";
+
             try{
                 $curl = curl_init($url);
                 curl_setopt($curl, CURLOPT_POST, true);
@@ -136,7 +136,6 @@
             }
         }
 
-
         private function getPersonalDataParams($response){
             $personalData=[];
             $index = 0;
@@ -158,9 +157,8 @@
             }
             return $personalData;
         }
-
         
-        private function filterJson($objQuery, $personalData){
+        private function filterQuery($objQuery, $personalData){
             $filteredQueryArray = [];
 
             foreach($objQuery as $query){                                            //go query by query
@@ -176,7 +174,6 @@
                                         array_push($columnsWithPersonalData, $queryColumn);
                                     }
                             }
-
                             if(!empty($columnsWithPersonalData)){
                                 array_push($filteredQuery, array(
                                     "table" => $queryTable["table"],
@@ -187,7 +184,6 @@
                         }
                     }
                 }
-
                 if(!empty($filteredQuery)){
                     array_push($filteredQueryArray, array(
                         "tables" => $filteredQuery,
@@ -199,58 +195,51 @@
                         )
                     );
                 }
-                
             }
             return $filteredQueryArray;
         }
 
-        private function parseSQLQuery($objQuery){
-            $parsedQueryArray = [];
-            foreach ($objQuery as $query){                                                          //go query by query
-                preg_match("/\bFROM\b/i", $query["sql"], $offsetTable, PREG_OFFSET_CAPTURE);        //get table names from SQL query
-                $offsetTableStart = $offsetTable[0][1]+5;
+        private function refreshToken($refreshToken){
 
-                if(preg_match("/\bWhere\b/i", $query["sql"], $offsetWhereClause, PREG_OFFSET_CAPTURE)){     //if the query comes with Where clause, we have to ignore it
-                    $offsetTableEnd = $offsetWhereClause[0][1] - 1 - $offsetTableStart;                     // -1 refers to the blank space between the last table name and the WHERE clause
-                    $result = substr($query["sql"], $offsetTableStart, $offsetTableEnd);
-                }
-                else{
-                    $result = substr($query["sql"], $offsetTableStart);
-                }
-                $tableNames = preg_split("/[\s,]+/", $result);
-                $parsedQuery=[];
-                $index = 0;
+            $api_key = 'AIzaSyDO-JXjcrO9x5sSX30mLQdSpu3_r7yI9gY';
+            $url = 'https://securetoken.googleapis.com/v1/token?key='.$api_key.'';
+            $dataPayload = [
+                'grant_type'=> "refresh_token",
+                'refresh_token' => $refreshToken,
+                'returnSecureToken' => true
+            ];
 
-                foreach($tableNames as $queryTable){                            //search the array containing the tables' names with personal data, with the tables names found inside the SQL query                         
-                            array_push($parsedQuery, array(
-                                "table" => $queryTable,
-                                "columns" => [],
-                                )
-                            );
-                            preg_match("/\bSELECT\b/i", $query["sql"], $offsetColumn, PREG_OFFSET_CAPTURE);
-                            $offsetColumnStart = $offsetColumn[0][1] + 7;
-                            $offsetColumnEnd = $offsetTable[0][1] - 1  - $offsetColumnStart;         // -1 refers to the blank space between the last column name and the FROM clause
-                            $result = substr($query["sql"],$offsetColumnStart, $offsetColumnEnd);
-                            $columnsNames = preg_split("/[\s,]+/", $result);
-
-                            foreach($columnsNames as $queryColumn){                                 
-                                        array_push($parsedQuery[$index]["columns"], $queryColumn);
-                            }
-                            $index ++;
-                }
-
-                    array_push($parsedQueryArray, array(                               //create a json array with a "tables" format
-                        "tables" => $parsedQuery,
-                        "action" => "Read",
-                        "timestamp" => $query["timestamp"],
-                        "user" => $query["user"],
-                        "group" => $query["group"],
-                        "returnedRows" => $query["returnedRows"],
-                        )
-                    );
-                
+            try{
+                $curl = curl_init($url);
+                curl_setopt($curl, CURLOPT_POST, true);
+                curl_setopt($curl, CURLOPT_POSTFIELDS, http_build_query($dataPayload));
+                curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
+                $response = curl_exec($curl);
+                curl_close($curl);
+            } catch( Exception $e){
+                return($e->getMessage());
             }
-            return $parsedQueryArray;
+
+
+            if(http_response_code() == 200){
+                $obj = json_decode($response, true);                //convert json to array
+                if (isset ($obj['id_token'])){                       
+                    global $idToken, $refreshToken, $expiresIn;
+                    print_r($obj);
+                    $idToken = $obj['id_token'];
+                    $refreshToken = $obj['refresh_token'];
+                    $expiresIn = $obj['expires_in'];
+                    return 200;                                     //query has been submited successfully
+                }
+                else if (isset($obj["error"]["message"])) {         //Checks in order to detect an unsuccessful submit request
+                    global $errorMessage;
+                    $errorMessage = $obj["error"]["message"];
+                    return $errorMessage;
+                }
+            } else {
+                return(http_response_code());
+            }
+
         }
 
     }
