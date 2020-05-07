@@ -1,14 +1,21 @@
 <?php
-
+    require 'Auth/FirebaseAuth.php';
+    require 'Util/Util.php';
     /** 
      * Class with an initialize function and query submition function
      * 
     */
     class PrivataAudit {
 
-        protected $dbKey = '';
-        protected $idToken = '';
-        protected $errorMessage = '';
+        private $firebaseAuth;
+        private $util;
+
+        function __construct(){
+            global $firebaseAuth, $util;
+
+            $firebaseAuth = new FirebaseAuth;
+            $util = new Util;
+        }
 
 
         /**
@@ -18,46 +25,11 @@
          * 
          * Fails with an error if the dbKey or dbSecret do not match
          */
-        public function initialize($dbKeyuser, $dbSecret){
-            global $dbKey;
-
-            $api_key = 'AIzaSyDO-JXjcrO9x5sSX30mLQdSpu3_r7yI9gY';
-            $url = 'https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key='.$api_key.'';
-
-            $dbKey = $dbKeyuser;
-            $localdbKey =  $dbKeyuser.'@blockbird.ventures';
-            $data = [
-                'email'=> $localdbKey,
-                'password' => $dbSecret,
-                'returnSecureToken' => true
-            ];
-
-            try{
-                $curl = curl_init($url);
-                curl_setopt($curl, CURLOPT_POST, true);
-                curl_setopt($curl, CURLOPT_POSTFIELDS, http_build_query($data));
-                curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
-                $response = curl_exec($curl);
-                curl_close($curl);
-            } catch( Exception $e){
-                return($e->getMessage());
-            }
-
-            if(http_response_code() == 200){
-                $obj = json_decode($response, true);                //convert json to array
-                if (isset ($obj['idToken'])){                       
-                    global $idToken;
-                    $idToken = $obj['idToken'];
-                    return 200;                                     //query has been submited successfully
-                }
-                else if (isset($obj["error"]["message"])) {         //Checks in order to detect an unsuccessful submit request
-                    global $errorMessage;
-                    $errorMessage = $obj["error"]["message"];
-                    return $errorMessage;
-                }
-            } else {
-                return(http_response_code());
-            }
+        public function initialize($dbKeyUser ,$dbSecret){
+            global $firebaseAuth;
+           
+            $response = $firebaseAuth -> auth($dbKeyUser, $dbSecret);
+            return $response;
         }
 
 
@@ -68,25 +40,60 @@
          * 
          * Fails with an error message should a request fail.
          */
-        public function submitQuery($query){
-            global $idToken, $dbKey;
+        public function submitQuery($queries){
+            global $dbKey, $firebaseAuth, $util;
 
-            $apiUrl = 'https://api-sandbox.privata.ai';
+            $response = $firebaseAuth -> verifyIdToken();
+            if ($response['code']== 200 ){
+                $idToken = $response['idToken'];
+            } else {
+                return $response['error'];
+            }
+            
+            define ("apiUrl", 'https://api-sandbox.privata.ai',true);
             $headers = array(
                 "Content-Type: application/json",
                 "Authorization: Bearer ".$idToken
             );
-            $url = $apiUrl."/databases"."/".$dbKey."/queries";
+
+
+            $url = apiUrl."/databases"."/".$dbKey;
+
+            
+            try{
+                $curl = curl_init($url);
+                curl_setopt($curl, CURLOPT_HTTPHEADER, $headers);
+                curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
+                $response = curl_exec($curl);
+                curl_close($curl);
+            } catch( Exception $e){
+                return($e->getMessage());
+            }
+
+            $objQuery = json_decode($queries, true);
+
+            try{
+                $personalData = $util -> getPersonalDataParams($response);
+                $filteredQueryArray = $util -> filterQuery($objQuery, $personalData);       // filter the query submited in order to only send relevant data
+
+            } catch (Exception $e){
+                return($e->getMessage());
+            }
+
+            if (empty($filteredQueryArray))
+                return 200;
+            $filteredJson = json_encode($filteredQueryArray);
+            $url = apiUrl."/databases"."/".$dbKey."/queries";
 
             try{
                 $curl = curl_init($url);
                 curl_setopt($curl, CURLOPT_POST, true);
                 curl_setopt($curl, CURLOPT_HTTPHEADER, $headers);
-                curl_setopt($curl, CURLOPT_POSTFIELDS, $query);
+                curl_setopt($curl, CURLOPT_POSTFIELDS, $filteredJson);
                 curl_setopt($curl, CURLOPT_RETURNTRANSFER, true);
                 $response = curl_exec($curl);
                 curl_close($curl);
-            } catch( Exception $e){
+            } catch (Exception $e){
                 return($e->getMessage());
             }
 
@@ -109,6 +116,8 @@
                 return(http_response_code());
             }
         }
+
+        
 
     }
     

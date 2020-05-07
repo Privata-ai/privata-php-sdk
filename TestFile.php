@@ -15,21 +15,56 @@
         $dbSecret = '05f3aed260dc756af246e166d1eef9c8f43cd61b';
         $queryTest = '[
             {
-              "sql": "SELECT first_name, last_name, phone_number, email FROM Patient",
+              "tables": [
+                {
+                  "table": "suppliers",
+                  "columns": [
+                    "bankAccountBranch",
+                    "bankAccountCode",
+                    "last_name"
+                  ]
+                },
+                {
+                  "table": "countries",
+                  "columns": [
+                  ]
+                }
+              ],
+              "action": "Read",
               "timestamp": 1567493198,
               "user": "4353479",
               "group": "Medics",
               "returnedRows": 3
             },
             {
-              "sql": "SELECT blood_type, notes FROM Medical_Record",
+              "tables": [
+                {
+                  "table": "buyingGroups",
+                  "columns": [
+                    "blood_type",
+                    "notes"
+                  ]
+                }
+              ],
+              "action": "Read",
               "timestamp": 1567493198,
               "user": "4353479",
               "group": "Medics",
               "returnedRows": 3
             },
             {
-              "sql": "SELECT address, vat_number, social_security_number, email FROM Patient_Receipts",
+              "tables": [
+                {
+                  "table": "Patient_Receipts",
+                  "columns": [
+                    "address",
+                    "vat_number",
+                    "social_security_number",
+                    "email"
+                  ]
+                }
+              ],
+              "action": "Read",
               "timestamp": 1293234,
               "user": "4353479",
               "group": "Administrative",
@@ -43,12 +78,18 @@
         $resultQuery = $testObject -> submitQuery($queryTest);
         
         echo "<br>";
+        echo "<br>";
         print_r ("Authentication result: ".$resultAuthentication);          //should print 200 in a successful request
         echo "<br>";
-        print_r ("Query result: ".$resultQuery);                            //should print 200 in a successful request
-
+        echo "<br>";
+        print_r ("Query result: ".$resultQuery);                           //should print 200 in a successful request
+        echo "<br>";
+        echo "<br>";
     ?>
 
+
     </body>
+
+
 
 </html>
