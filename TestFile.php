@@ -13,7 +13,7 @@
 
         $dbKeyuser = '11dfce72-7889-40e5-b1c8-19865c619eda';
         $dbSecret = '05f3aed260dc756af246e166d1eef9c8f43cd61b';
-        $queryTest2 = '[
+        $queryTest = '[
             {
               "tables": [
                 {
@@ -75,17 +75,16 @@
         //Tests in order to simulate an API call using the PHP-SDK file
         $testObject = new PrivataAudit;
         $resultAuthentication = $testObject -> initialize($dbKeyuser, $dbSecret);
-        $resultQuery2 = $testObject -> submitQuery($queryTest2);
+        $resultQuery = $testObject -> submitQuery($queryTest);
         
         echo "<br>";
         echo "<br>";
         print_r ("Authentication result: ".$resultAuthentication);          //should print 200 in a successful request
         echo "<br>";
         echo "<br>";
-        print_r ("Query result: ".$resultQuery2); 
+        print_r ("Query result: ".$resultQuery);                           //should print 200 in a successful request
         echo "<br>";
         echo "<br>";
-        print_r ("To Do: criar um timer para o refresh token e verificar esse timer sempre que é necessário utilizar o id Token"); 
     ?>
 
 
